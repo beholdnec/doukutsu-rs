@@ -7,19 +7,25 @@ use crate::components::flash::Flash;
 use crate::framework::error::GameResult;
 use crate::game::caret::CaretType;
 use crate::game::npc::boss::BossNPC;
-use crate::game::npc::list::NPCList;
+use crate::game::npc::list::{BorrowedNPCRefMut, NPCList, TokenProvider};
 use crate::game::npc::NPC;
 use crate::game::player::Player;
 use crate::game::shared_game_state::SharedGameState;
 use crate::game::stage::Stage;
 use crate::util::rng::RNG;
 
-impl NPC {
+impl BorrowedNPCRefMut<'_> {
     pub(crate) fn tick_n066_misery_bubble(&mut self, state: &mut SharedGameState, npc_list: &NPCList) -> GameResult {
         match self.action_num {
             0 | 1 => {
                 if self.action_num == 0 {
-                    if let Some(npc) = npc_list.iter().find(|npc| npc.event_num == 1000) {
+                    let npc = self.unborrow_then(|token| {
+                        npc_list.iter().find(|npc| npc.borrow(token).event_num == 1000)
+                    });
+
+                    if let Some(npc) = npc {
+                        let npc = npc.borrow_unmanaged();
+
                         self.action_counter2 = npc.id;
                         self.target_x = npc.x;
                         self.target_y = npc.y;
@@ -45,6 +51,7 @@ impl NPC {
                     state.sound_manager.play_sfx(21);
 
                     if let Some(npc) = npc_list.get_npc(self.action_counter2 as usize) {
+                        let mut npc = npc.borrow_mut_unmanaged();
                         npc.cond.set_alive(false);
                     }
                 }
@@ -664,7 +671,7 @@ impl NPC {
                     self.vel_x = 0;
                     self.vel_y = 0;
 
-                    npc_list.kill_npcs_by_type(252, true, state);
+                    npc_list.kill_npcs_by_type(252, true, state, self);
 
                     let mut npc = NPC::create(4, &state.npc_table);
                     npc.cond.set_alive(true);
@@ -850,6 +857,8 @@ impl NPC {
                 }
 
                 if let Some(parent) = self.get_parent_ref_mut(npc_list) {
+                    let parent = parent.borrow_unmanaged();
+                    
                     self.x = parent.x
                         + self.action_counter as i32 * ((self.action_counter2 as f64 * CDEG_RAD).cos() * 512.0) as i32
                         / 4;

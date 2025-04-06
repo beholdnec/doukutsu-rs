@@ -5,6 +5,7 @@ use std::ops::Deref;
 use std::rc::Rc;
 
 use byteorder::{LE, ReadBytesExt};
+use list::{BorrowedNPCRefMut, NPCAccessToken};
 
 use crate::bitfield;
 use crate::common::{Condition, interpolate_fix9_scale, Rect};
@@ -182,7 +183,7 @@ impl NPC {
         layer: NPCLayer,
     ) -> GameResult {
         if self.layer == layer {
-            self.draw(state, ctx, frame)?
+            self.npc_draw(state, ctx, frame)?
         }
 
         Ok(())
@@ -229,7 +230,7 @@ impl NPC {
     }
 }
 
-impl GameEntity<([&mut Player; 2], &NPCList, &mut Stage, &mut BulletManager, &mut Flash, &mut BossNPC)> for NPC {
+impl GameEntity<([&mut Player; 2], &NPCList, &mut Stage, &mut BulletManager, &mut Flash, &mut BossNPC)> for BorrowedNPCRefMut<'_> {
     fn tick(
         &mut self,
         state: &mut SharedGameState,
@@ -645,6 +646,12 @@ impl GameEntity<([&mut Player; 2], &NPCList, &mut Stage, &mut BulletManager, &mu
     }
 
     fn draw(&self, state: &mut SharedGameState, ctx: &mut Context, frame: &Frame) -> GameResult {
+        self.npc_draw(state, ctx, frame)
+    }
+}
+
+impl NPC {
+    fn npc_draw(&self, state: &mut SharedGameState, ctx: &mut Context, frame: &Frame) -> GameResult {
         if !self.cond.alive() || self.cond.hidden() {
             return Ok(());
         }

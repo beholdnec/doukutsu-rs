@@ -1,13 +1,13 @@
 use crate::common::{CDEG_RAD, Direction};
 use crate::framework::error::GameResult;
 use crate::game::caret::CaretType;
-use crate::game::npc::list::NPCList;
+use crate::game::npc::list::{BorrowedNPCRefMut, NPCList};
 use crate::game::npc::NPC;
 use crate::game::player::Player;
 use crate::game::shared_game_state::SharedGameState;
 use crate::util::rng::RNG;
 
-impl NPC {
+impl BorrowedNPCRefMut<'_> {
     // Gaudi from room 2
     pub(crate) fn tick_n361_flying_gaudi(
         &mut self,
@@ -599,7 +599,7 @@ impl NPC {
                     state.sound_manager.play_sfx(52);
                 }
 
-                npc_list.kill_npcs_by_type(369, true, state);
+                npc_list.kill_npcs_by_type(369, true, state, self);
 
                 npc_list.create_death_smoke(
                     self.x + (self.rng.range(-32..32) << 9) as i32,
