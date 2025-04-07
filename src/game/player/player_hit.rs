@@ -374,9 +374,9 @@ impl Player {
             return;
         }
 
-        for mut npc in npc_list.iter_alive(token) {
+        npc_list.for_each_alive_mut(token, |mut npc| {
             self.tick_npc_collision(id, state, &mut npc, npc_list, inventory);
-        }
+        });
 
         for boss_npc in &mut boss.parts {
             if boss_npc.cond.alive() {

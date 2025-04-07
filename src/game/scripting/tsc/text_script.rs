@@ -5,6 +5,7 @@ use std::io;
 use std::io::Cursor;
 use std::io::Seek;
 use std::io::SeekFrom;
+use std::ops::ControlFlow;
 use std::ops::Not;
 use std::rc::Rc;
 
@@ -1482,7 +1483,7 @@ impl TextScriptVM {
             TSCOpCode::DNP => {
                 let event_num = read_cur_varint(&mut cursor)? as u16;
 
-                game_scene.npc_list.kill_npcs_by_event(event_num, state, &game_scene.npc_token);
+                game_scene.npc_list.kill_npcs_by_event(event_num, state, &mut game_scene.npc_token);
 
                 exec_state = TextScriptExecutionState::Running(event, cursor.position() as u32);
             }
@@ -1531,15 +1532,17 @@ impl TextScriptVM {
                 if event_num == 0 {
                     game_scene.boss_life_bar.set_boss_target(&game_scene.boss);
                 } else {
-                    for mut npc in game_scene.npc_list.iter_alive(&mut game_scene.npc_token) {
+                    game_scene.npc_list.try_for_each_alive_mut(&mut game_scene.npc_token, |mut npc| {
                         if event_num == npc.event_num {
                             let npc_id = npc.id;
                             npc.unborrow_then(|token| {
                                 game_scene.boss_life_bar.set_npc_target(npc_id, &game_scene.npc_list, token);
                             });
-                            break;
+                            return ControlFlow::Break(());
                         }
-                    }
+
+                        ControlFlow::Continue(())
+                    });
                 }
 
                 exec_state = TextScriptExecutionState::Running(event, cursor.position() as u32);
@@ -1557,7 +1560,7 @@ impl TextScriptVM {
                 let tsc_direction = read_cur_varint(&mut cursor)? as usize;
                 let direction = Direction::from_int_facing(tsc_direction).unwrap_or(Direction::Left);
 
-                for mut npc in game_scene.npc_list.iter_alive(&mut game_scene.npc_token) {
+                game_scene.npc_list.for_each_alive_mut(&mut game_scene.npc_token, |mut npc| {
                     if npc.event_num == event_num {
                         npc.action_num = action_num;
                         npc.tsc_direction = tsc_direction as u16;
@@ -1573,7 +1576,7 @@ impl TextScriptVM {
                             npc.direction = direction;
                         }
                     }
-                }
+                });
 
                 exec_state = TextScriptExecutionState::Running(event, cursor.position() as u32);
             }
@@ -1583,7 +1586,7 @@ impl TextScriptVM {
                 let tsc_direction = read_cur_varint(&mut cursor)? as usize;
                 let direction = Direction::from_int_facing(tsc_direction).unwrap_or(Direction::Left);
 
-                for mut npc in game_scene.npc_list.iter_alive(&mut game_scene.npc_token) {
+                game_scene.npc_list.try_for_each_alive_mut(&mut game_scene.npc_token, |mut npc| {
                     if npc.event_num == event_num {
                         npc.npc_flags.set_solid_soft(false);
                         npc.npc_flags.set_ignore_tile_44(false);
@@ -1630,7 +1633,7 @@ impl TextScriptVM {
                             npc.direction = direction;
                         }
 
-                        npc.tick(
+                        let tick_result = npc.tick(
                             state,
                             (
                                 [&mut game_scene.player1, &mut game_scene.player2],
@@ -1640,9 +1643,16 @@ impl TextScriptVM {
                                 &mut game_scene.flash,
                                 &mut game_scene.boss,
                             ),
-                        )?;
+                        );
+
+                        match tick_result {
+                            Err(e) => return ControlFlow::Break(e),
+                            _ => ()
+                        };
                     }
-                }
+
+                    ControlFlow::Continue(())
+                })?;
 
                 exec_state = TextScriptExecutionState::Running(event, cursor.position() as u32);
             }
@@ -1654,7 +1664,7 @@ impl TextScriptVM {
                 let direction = Direction::from_int_facing(tsc_direction).unwrap_or(Direction::Left);
                 let block_size = state.tile_size.as_int() * 0x200;
 
-                for mut npc in game_scene.npc_list.iter_alive(&mut game_scene.npc_token) {
+                game_scene.npc_list.try_for_each_alive_mut(&mut game_scene.npc_token, |mut npc| {
                     if npc.event_num == event_num {
                         npc.x = x * block_size;
                         npc.y = y * block_size;
@@ -1671,9 +1681,11 @@ impl TextScriptVM {
                             npc.direction = direction;
                         }
 
-                        break;
+                        return ControlFlow::Break(())
                     }
-                }
+
+                    ControlFlow::Continue(())
+                });
 
                 exec_state = TextScriptExecutionState::Running(event, cursor.position() as u32);
             }

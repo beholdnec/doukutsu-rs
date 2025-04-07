@@ -258,7 +258,11 @@ impl NPCList {
     /// Deletes NPCs with specified type.
     pub fn kill_npcs_by_type(&self, npc_type: u16, smoke: bool, state: &mut SharedGameState, token: &mut impl TokenProvider) {
         token.unborrow_then(|token| {
-            for mut npc in self.iter_alive(token).filter(|n| n.npc_type == npc_type) {
+            self.for_each_alive_mut(token, |mut npc| {
+                if npc.npc_type != npc_type {
+                    return;
+                }
+
                 state.set_flag(npc.flag_num as usize, true);
                 npc.cond.set_alive(false);
     
@@ -280,12 +284,12 @@ impl NPCList {
                         _ => {}
                     };
                 }
-            }
+            });
         });
     }
 
     /// Called once NPC is killed, creates smoke and drops.
-    pub fn kill_npc(&self, id: usize, vanish: bool, can_drop_missile: bool, state: &mut SharedGameState, token: &NPCAccessToken) {
+    pub fn kill_npc(&self, id: usize, vanish: bool, can_drop_missile: bool, state: &mut SharedGameState, token: &mut NPCAccessToken) {
         if let Some(npc) = self.get_npc(id) {
             let mut npc = npc.borrow_mut(token);
 
@@ -354,13 +358,13 @@ impl NPCList {
     }
 
     /// Removes NPCs whose event number matches the provided one.
-    pub fn kill_npcs_by_event(&self, event_num: u16, state: &mut SharedGameState, token: &NPCAccessToken) {
-        for mut npc in self.iter_alive(token) {
+    pub fn kill_npcs_by_event(&self, event_num: u16, state: &mut SharedGameState, token: &mut NPCAccessToken) {
+        self.for_each_alive_mut(token, |mut npc| {
             if npc.event_num == event_num {
                 npc.cond.set_alive(false);
                 state.set_flag(npc.flag_num as usize, true);
             }
-        }
+        });
     }
 
     /// Creates NPC death smoke diffusing in random directions.

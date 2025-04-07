@@ -1,5 +1,5 @@
 use std::cell::{Cell, Ref, RefCell, RefMut};
-use std::ops::{Deref, DerefMut};
+use std::ops::{ControlFlow, Deref, DerefMut};
 
 use crate::framework::error::{GameError, GameResult};
 use crate::game::npc::NPC;
@@ -31,7 +31,11 @@ impl TokenProvider for NPCAccessToken {
 }
 
 pub enum BorrowedNPCRefMut<'a> {
-    Borrowed { ref_mut: RefMut<'a, NPC>, token: &'a mut NPCAccessToken, cell: &'a NPCCell },
+    Borrowed {
+        ref_mut: RefMut<'a, NPC>,
+        cell: &'a NPCCell,
+        token: &'a mut NPCAccessToken,
+    },
     Unborrowed,
 }
 
@@ -82,8 +86,9 @@ impl TokenProvider for BorrowedNPCRefMut<'_> {
 }
 
 impl NPCCell {
-    pub fn borrow(&self, _token: &NPCAccessToken) -> Ref<'_, NPC> {
-        // TODO: get rid of this function?
+    pub fn borrow<'a>(&'a self, _token: &'a NPCAccessToken) -> Ref<'a, NPC> {
+        // By lifetime rules, the Ref returned by this functions holds a reference
+        // to the token.
         self.0.borrow()
     }
 
@@ -96,8 +101,8 @@ impl NPCCell {
     pub fn borrow_mut<'a>(&'a self, token: &'a mut NPCAccessToken) -> BorrowedNPCRefMut<'a> {
         BorrowedNPCRefMut::Borrowed {
             ref_mut: self.0.borrow_mut(),
+            cell: self,
             token,
-            cell: self
         }
     }
 
@@ -151,7 +156,7 @@ impl NPCList {
         for id in min_id..(npc_len as u16) {
             let npc_ref = self.npcs.get(id as usize).unwrap();
 
-            if !npc_ref.0.try_borrow().is_ok_and(|npc_ref| npc_ref.cond.alive()) {
+            if npc_ref.0.try_borrow().is_ok_and(|npc_ref| !npc_ref.cond.alive()) {
                 npc.id = id;
 
                 if npc.tsc_direction == 0 {
@@ -205,18 +210,49 @@ impl NPCList {
     }
 
     /// Returns an iterator that iterates over allocated (not up to it's capacity) NPC slots.
-    pub fn iter(&self) -> NPCListMutableIterator<'_> {
-        NPCListMutableIterator::new(self)
+    pub fn iter(&self) -> impl Iterator<Item = &NPCCell> {
+        // FIXME: what if max_npc changes during iteration?
+        // should we take that into account?
+        self.npcs.iter().take(self.max_npc.get() as usize)
     }
 
     /// Returns an iterator over alive NPC slots.
-    pub fn iter_alive<'a>(&'a self, token: &'a mut NPCAccessToken) -> NPCListMutableAliveIterator<'a> {
-        NPCListMutableAliveIterator::new(self, token)
+    pub fn iter_alive<'a>(&'a self, token: &'a NPCAccessToken) -> NPCListAliveIterator<'a> {
+        NPCListAliveIterator::new(self, token)
+    }
+
+    /// Calls a closure for each alive NPC
+    pub fn for_each_alive_mut<F>(&self, token: &mut NPCAccessToken, mut f: F)
+    where
+        F: FnMut(BorrowedNPCRefMut<'_>)
+    {
+        for cell in self.iter() {
+            if cell.borrow(token).cond.alive() {
+                f(cell.borrow_mut(token));
+            }
+        }
+    }
+
+    pub fn try_for_each_alive_mut<F, B, C>(&self, token: &mut NPCAccessToken, mut f: F) -> Result<(), B>
+    where
+        F: FnMut(BorrowedNPCRefMut<'_>) -> ControlFlow<B, C>
+    {
+        for cell in self.iter() {
+            if cell.borrow(token).cond.alive() {
+                if let ControlFlow::Break(b) = f(cell.borrow_mut(token)) {
+                    return Err(b);
+                }
+            }
+        }
+
+        Ok(())
     }
 
     /// Removes all NPCs from this list and resets it's capacity.
     pub fn clear(&self, token: &mut NPCAccessToken) {
-        for (idx, mut npc) in self.iter_alive(token).enumerate() {
+        for (idx, npc) in self.iter().enumerate() {
+            let mut npc = npc.borrow_mut(token);
+
             *npc = NPC::empty();
             npc.id = idx as u16;
         }
@@ -235,46 +271,46 @@ impl NPCList {
     }
 }
 
-pub struct NPCListMutableIterator<'a> {
+// pub struct NPCListMutableIterator<'a> {
+//     index: u16,
+//     map: &'a NPCList,
+// }
+
+// impl<'a> NPCListMutableIterator<'a> {
+//     pub fn new(map: &'a NPCList) -> NPCListMutableIterator<'a> {
+//         NPCListMutableIterator { index: 0, map }
+//     }
+// }
+
+// impl<'a> Iterator for NPCListMutableIterator<'a> {
+//     type Item = &'a NPCCell;
+
+//     fn next(&mut self) -> Option<Self::Item> {
+//         if self.index >= self.map.max_npc.get() {
+//             return None;
+//         }
+
+//         let item = self.map.npcs.get(self.index as usize);
+//         self.index += 1;
+
+//         item
+//     }
+// }
+
+pub struct NPCListAliveIterator<'a> {
     index: u16,
     map: &'a NPCList,
+    token: &'a NPCAccessToken,
 }
 
-impl<'a> NPCListMutableIterator<'a> {
-    pub fn new(map: &'a NPCList) -> NPCListMutableIterator<'a> {
-        NPCListMutableIterator { index: 0, map }
+impl<'a> NPCListAliveIterator<'a> {
+    pub fn new(map: &'a NPCList, token: &'a NPCAccessToken) -> NPCListAliveIterator<'a> {
+        NPCListAliveIterator { index: 0, map, token }
     }
 }
 
-impl<'a> Iterator for NPCListMutableIterator<'a> {
-    type Item = &'a NPCCell;
-
-    fn next(&mut self) -> Option<Self::Item> {
-        if self.index >= self.map.max_npc.get() {
-            return None;
-        }
-
-        let item = self.map.npcs.get(self.index as usize);
-        self.index += 1;
-
-        item
-    }
-}
-
-pub struct NPCListMutableAliveIterator<'a> {
-    index: u16,
-    map: &'a NPCList,
-    token: &'a mut NPCAccessToken,
-}
-
-impl NPCListMutableAliveIterator<'_> {
-    pub fn new<'a>(map: &'a NPCList, token: &'a mut NPCAccessToken) -> NPCListMutableAliveIterator<'a> {
-        NPCListMutableAliveIterator { index: 0, map, token }
-    }
-}
-
-impl<'a> Iterator for NPCListMutableAliveIterator<'a> {
-    type Item = BorrowedNPCRefMut<'a>;
+impl<'a> Iterator for NPCListAliveIterator<'a> {
+    type Item = Ref<'a, NPC>;
 
     fn next(&mut self) -> Option<Self::Item> {
         loop {
@@ -289,8 +325,8 @@ impl<'a> Iterator for NPCListMutableAliveIterator<'a> {
                 None => {
                     return None;
                 }
-                Some(ref npc) if npc.borrow(self.token).cond.alive() => {
-                    return Some(item?.borrow_mut(self.token));
+                Some(ref npc) if (*npc).borrow(self.token).cond.alive() => {
+                    return Some(item?.borrow(self.token));
                 }
                 _ => {}
             }
@@ -312,7 +348,7 @@ pub fn test_npc_list() -> GameResult {
     npc.cond.set_alive(true);
 
     {
-        let (map, token) = NPCList::new();
+        let (map, mut token) = NPCList::new();
         let mut ctr = 20;
 
         map.spawn(0, npc.clone())?;
@@ -322,7 +358,7 @@ pub fn test_npc_list() -> GameResult {
         assert_eq!(map.iter_alive(&token).count(), 3);
 
         for npc_ref in map.iter() {
-            let mut npc_ref = npc_ref.borrow_mut(&token);
+            let mut npc_ref = npc_ref.borrow_mut(&mut token);
 
             if ctr > 0 {
                 ctr -= 1;
@@ -338,7 +374,7 @@ pub fn test_npc_list() -> GameResult {
         assert_eq!(map.iter_alive(&token).count(), 43);
 
         for npc_ref in map.iter().skip(256) {
-            let mut npc_ref = npc_ref.borrow_mut(&token);
+            let mut npc_ref = npc_ref.borrow_mut(&mut token);
 
             if npc_ref.cond.alive() {
                 npc_ref.cond.set_alive(false);
@@ -349,7 +385,7 @@ pub fn test_npc_list() -> GameResult {
 
         assert!(map.spawn((NPC_LIST_MAX_CAP + 1) as u16, npc.clone()).is_err());
 
-        map.clear(&token);
+        map.clear(&mut token);
         assert_eq!(map.iter_alive(&token).count(), 0);
 
         for i in 0..map.max_capacity() {

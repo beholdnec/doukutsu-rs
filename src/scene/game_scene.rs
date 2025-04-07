@@ -1,5 +1,5 @@
 use std::cell::RefCell;
-use std::ops::{Deref, Range};
+use std::ops::{ControlFlow, Deref, Range};
 use std::rc::Rc;
 
 use log::info;
@@ -214,7 +214,7 @@ impl GameScene {
     }
 
     fn draw_npc_layer(&self, state: &mut SharedGameState, ctx: &mut Context, layer: NPCLayer) -> GameResult {
-        for npc in self.npc_list.iter_alive(&mut self.npc_token) {
+        for npc in self.npc_list.iter_alive(&self.npc_token) {
             if npc.layer != layer
                 || npc.x < (self.frame.x - 128 * 0x200 - npc.display_bounds.width() as i32 * 0x200)
                 || npc.x
@@ -230,14 +230,14 @@ impl GameScene {
                 continue;
             }
 
-            npc.draw(state, ctx, &self.frame)?;
+            npc.npc_draw(state, ctx, &self.frame)?;
         }
 
         Ok(())
     }
 
     fn draw_npc_popup(&self, state: &mut SharedGameState, ctx: &mut Context) -> GameResult {
-        for npc in self.npc_list.iter_alive(&mut self.npc_token) {
+        for npc in self.npc_list.iter_alive(&self.npc_token) {
             npc.popup.draw(state, ctx, &self.frame)?;
         }
         Ok(())
@@ -1110,10 +1110,10 @@ impl GameScene {
     }
 
     fn tick_npc_splash(&mut self, state: &mut SharedGameState) {
-        for mut npc in self.npc_list.iter_alive(&self.npc_token) {
+        self.npc_list.for_each_alive_mut(&mut self.npc_token, |mut npc| {
             // Water Droplet
             if npc.npc_type == 73 {
-                continue;
+                return;
             }
 
             if !npc.splash && npc.flags.in_water() {
@@ -1149,13 +1149,13 @@ impl GameScene {
             if !npc.flags.in_water() {
                 npc.splash = false;
             }
-        }
+        });
     }
 
     fn tick_npc_bullet_collissions(&mut self, state: &mut SharedGameState) {
-        for mut npc in self.npc_list.iter_alive(&self.npc_token) {
+        self.npc_list.for_each_alive_mut(&mut self.npc_token, |mut npc| {
             if npc.npc_flags.shootable() && npc.npc_flags.interactable() {
-                continue;
+                return;
             }
 
             for bullet in self.bullet_manager.bullets.iter_mut() {
@@ -1239,7 +1239,7 @@ impl GameScene {
                     self.npc_list.kill_npc(npc_id as usize, !npc_cond.drs_novanish(), can_drop_missile, state, token);
                 });
             }
-        }
+        });
 
         for i in 0..self.boss.parts.len() {
             let mut idx = i;
@@ -1384,8 +1384,8 @@ impl GameScene {
             self.player2.damage = 0;
         }
 
-        for mut npc in self.npc_list.iter_alive(&self.npc_token) {
-            npc.tick(
+        self.npc_list.try_for_each_alive_mut(&mut self.npc_token, |mut npc| {
+            match npc.tick(
                 state,
                 (
                     [&mut self.player1, &mut self.player2],
@@ -1395,8 +1395,13 @@ impl GameScene {
                     &mut self.flash,
                     &mut self.boss,
                 ),
-            )?;
-        }
+            ) {
+                Err(e) => return ControlFlow::Break(e),
+                _ => {}
+            };
+
+            ControlFlow::Continue(())
+        })?;
         self.boss.tick(
             state,
             (
@@ -1419,7 +1424,7 @@ impl GameScene {
                 &self.npc_list,
                 &mut self.boss,
                 &mut self.inventory_player1,
-                &self.npc_token,
+                &mut self.npc_token,
             );
             self.player2.tick_npc_collisions(
                 TargetPlayer::Player2,
@@ -1427,15 +1432,15 @@ impl GameScene {
                 &self.npc_list,
                 &mut self.boss,
                 &mut self.inventory_player2,
-                &self.npc_token,
+                &mut self.npc_token,
             );
         }
 
-        for mut npc in self.npc_list.iter_alive(&self.npc_token) {
+        self.npc_list.for_each_alive_mut(&mut self.npc_token, |mut npc| {
             if !npc.npc_flags.ignore_solidity() {
                 npc.tick_map_collisions(state, &self.npc_list, &mut self.stage);
             }
-        }
+        });
         for npc in self.boss.parts.iter_mut() {
             if npc.cond.alive() && !npc.npc_flags.ignore_solidity() {
                 npc.tick_map_collisions(state, &self.npc_list, &mut self.stage);
@@ -1555,7 +1560,7 @@ impl GameScene {
             self.player2.has_dog = self.inventory_player2.has_item(14);
         }
 
-        self.water_renderer.tick(state, (&[&self.player1, &self.player2], &self.npc_list, &self.npc_token))?;
+        self.water_renderer.tick(state, (&[&self.player1, &self.player2], &self.npc_list, &mut self.npc_token))?;
 
         if self.map_name_counter > 0 {
             self.map_name_counter -= 1;
@@ -1941,12 +1946,12 @@ impl Scene for GameScene {
         self.player2.exp_popup.prev_x = self.player2.exp_popup.x;
         self.player2.exp_popup.prev_y = self.player2.exp_popup.y;
 
-        for mut npc in self.npc_list.iter_alive(&self.npc_token) {
+        self.npc_list.for_each_alive_mut(&mut self.npc_token, |mut npc| {
             npc.prev_x = npc.x;
             npc.prev_y = npc.y;
             npc.popup.prev_x = npc.prev_x;
             npc.popup.prev_y = npc.prev_y;
-        }
+        });
 
         for npc in self.boss.parts.iter_mut() {
             if npc.cond.alive() {
