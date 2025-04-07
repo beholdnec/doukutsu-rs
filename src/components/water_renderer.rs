@@ -100,7 +100,7 @@ impl DynamicWater {
         }
     }
 
-    pub fn interact(&mut self, players: &[&Player], npc_list: &NPCList, token: &NPCAccessToken) {
+    pub fn interact(&mut self, players: &[&Player], npc_list: &NPCList, token: &mut NPCAccessToken) {
         let cols_i32 = self.columns.len() as i32;
 
         let mut tick_object = |obj: &dyn PhysicalEntity| {
@@ -211,7 +211,7 @@ impl WaterRenderer {
         }
     }
 
-    pub fn tick(&mut self, state: &mut SharedGameState, (players, npc_list, token): (&[&Player], &NPCList, &NPCAccessToken)) -> GameResult<()> {
+    pub fn tick(&mut self, state: &mut SharedGameState, (players, npc_list, token): (&[&Player], &NPCList, &mut NPCAccessToken)) -> GameResult<()> {
         for surf in &mut self.water_surfaces {
             surf.interact(players, npc_list, token);
             surf.tick();

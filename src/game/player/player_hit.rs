@@ -368,7 +368,7 @@ impl Player {
         npc_list: &NPCList,
         boss: &mut BossNPC,
         inventory: &mut Inventory,
-        token: &NPCAccessToken,
+        token: &mut NPCAccessToken,
     ) {
         if !self.cond.alive() {
             return;

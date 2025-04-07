@@ -16,22 +16,22 @@ pub struct NPCAccessToken {
 }
 
 pub trait TokenProvider {
-    fn unborrow_then<'a: 'b, 'b, F, T>(&'a mut self, f: F) -> T
+    fn unborrow_then<F, T>(&mut self, f: F) -> T
     where
-        F: FnOnce(&'b NPCAccessToken) -> T;
+        F: FnOnce(&mut NPCAccessToken) -> T;
 }
 
 impl TokenProvider for NPCAccessToken {
-    fn unborrow_then<'a: 'b, 'b, F, T>(&'a mut self, f: F) -> T
+    fn unborrow_then<F, T>(&mut self, f: F) -> T
     where
-        F: FnOnce(&'b NPCAccessToken) -> T
+        F: FnOnce(&mut NPCAccessToken) -> T
     {
         f(self)
     }
 }
 
 pub enum BorrowedNPCRefMut<'a> {
-    Borrowed { ref_mut: RefMut<'a, NPC>, token: &'a NPCAccessToken, cell: &'a NPCCell },
+    Borrowed { ref_mut: RefMut<'a, NPC>, token: &'a mut NPCAccessToken, cell: &'a NPCCell },
     Unborrowed,
 }
 
@@ -56,9 +56,9 @@ impl DerefMut for BorrowedNPCRefMut<'_> {
 }
 
 impl TokenProvider for BorrowedNPCRefMut<'_> {
-    fn unborrow_then<'a: 'b, 'b, F, T>(&'a mut self, f: F) -> T
+    fn unborrow_then<F, T>(&mut self, f: F) -> T
     where
-        F: FnOnce(&'b NPCAccessToken) -> T
+        F: FnOnce(&mut NPCAccessToken) -> T
     {
         match self {
             BorrowedNPCRefMut::Borrowed { .. } => {
@@ -93,7 +93,7 @@ impl NPCCell {
     }
 
     /// Mutably borrows the NPC. The access token is taken and held until the borrow is dropped.
-    pub fn borrow_mut<'a>(&'a self, token: &'a NPCAccessToken) -> BorrowedNPCRefMut<'a> {
+    pub fn borrow_mut<'a>(&'a self, token: &'a mut NPCAccessToken) -> BorrowedNPCRefMut<'a> {
         BorrowedNPCRefMut::Borrowed {
             ref_mut: self.0.borrow_mut(),
             token,
@@ -127,10 +127,10 @@ impl NPCList {
             seed: 0,
         };
 
-        let token = NPCAccessToken { _private: () };
+        let mut token = NPCAccessToken { _private: () };
 
         for (idx, npc_ref) in map.npcs.iter().enumerate() {
-            npc_ref.borrow_mut(&token).id = idx as u16;
+            npc_ref.borrow_mut(&mut token).id = idx as u16;
         }
 
         (map, token)
@@ -210,12 +210,12 @@ impl NPCList {
     }
 
     /// Returns an iterator over alive NPC slots.
-    pub fn iter_alive<'a>(&'a self, token: &'a NPCAccessToken) -> NPCListMutableAliveIterator<'a> {
+    pub fn iter_alive<'a>(&'a self, token: &'a mut NPCAccessToken) -> NPCListMutableAliveIterator<'a> {
         NPCListMutableAliveIterator::new(self, token)
     }
 
     /// Removes all NPCs from this list and resets it's capacity.
-    pub fn clear(&self, token: &NPCAccessToken) {
+    pub fn clear(&self, token: &mut NPCAccessToken) {
         for (idx, mut npc) in self.iter_alive(token).enumerate() {
             *npc = NPC::empty();
             npc.id = idx as u16;
@@ -264,11 +264,11 @@ impl<'a> Iterator for NPCListMutableIterator<'a> {
 pub struct NPCListMutableAliveIterator<'a> {
     index: u16,
     map: &'a NPCList,
-    token: &'a NPCAccessToken,
+    token: &'a mut NPCAccessToken,
 }
 
-impl<'a> NPCListMutableAliveIterator<'a> {
-    pub fn new(map: &'a NPCList, token: &'a NPCAccessToken) -> NPCListMutableAliveIterator<'a> {
+impl NPCListMutableAliveIterator<'_> {
+    pub fn new<'a>(map: &'a NPCList, token: &'a mut NPCAccessToken) -> NPCListMutableAliveIterator<'a> {
         NPCListMutableAliveIterator { index: 0, map, token }
     }
 }

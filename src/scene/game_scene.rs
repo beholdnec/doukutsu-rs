@@ -214,7 +214,7 @@ impl GameScene {
     }
 
     fn draw_npc_layer(&self, state: &mut SharedGameState, ctx: &mut Context, layer: NPCLayer) -> GameResult {
-        for npc in self.npc_list.iter_alive(&self.npc_token) {
+        for npc in self.npc_list.iter_alive(&mut self.npc_token) {
             if npc.layer != layer
                 || npc.x < (self.frame.x - 128 * 0x200 - npc.display_bounds.width() as i32 * 0x200)
                 || npc.x
@@ -237,7 +237,7 @@ impl GameScene {
     }
 
     fn draw_npc_popup(&self, state: &mut SharedGameState, ctx: &mut Context) -> GameResult {
-        for npc in self.npc_list.iter_alive(&self.npc_token) {
+        for npc in self.npc_list.iter_alive(&mut self.npc_token) {
             npc.popup.draw(state, ctx, &self.frame)?;
         }
         Ok(())
