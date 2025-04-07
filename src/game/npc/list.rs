@@ -87,12 +87,12 @@ impl TokenProvider for BorrowedNPCRefMut<'_> {
 
 impl NPCCell {
     pub fn borrow<'a>(&'a self, _token: &'a NPCAccessToken) -> Ref<'a, NPC> {
-        // By lifetime rules, the Ref returned by this functions holds a reference
+        // By lifetime rules, the Ref returned by this function holds a reference
         // to the token.
         self.0.borrow()
     }
 
-    /// Borrows the NPC without an access token. The caller is responsible for preventing multiple-borrow panics.
+    /// Borrows the NPC without an access token. The caller is responsible for preventing borrow panics.
     pub fn borrow_unmanaged(&self) -> Ref<'_, NPC> {
         self.0.borrow()
     }
@@ -222,14 +222,16 @@ impl NPCList {
     }
 
     /// Calls a closure for each alive NPC
-    pub fn for_each_alive_mut<F>(&self, token: &mut NPCAccessToken, mut f: F)
+    pub fn for_each_alive_mut<F>(&self, token: &mut impl TokenProvider, mut f: F)
     where
         F: FnMut(BorrowedNPCRefMut<'_>)
     {
         for cell in self.iter() {
-            if cell.borrow(token).cond.alive() {
-                f(cell.borrow_mut(token));
-            }
+            token.unborrow_then(|token| {
+                if cell.borrow(token).cond.alive() {
+                    f(cell.borrow_mut(token));
+                }
+            });
         }
     }
 
@@ -270,32 +272,6 @@ impl NPCList {
         NPC_LIST_MAX_CAP as u16
     }
 }
-
-// pub struct NPCListMutableIterator<'a> {
-//     index: u16,
-//     map: &'a NPCList,
-// }
-
-// impl<'a> NPCListMutableIterator<'a> {
-//     pub fn new(map: &'a NPCList) -> NPCListMutableIterator<'a> {
-//         NPCListMutableIterator { index: 0, map }
-//     }
-// }
-
-// impl<'a> Iterator for NPCListMutableIterator<'a> {
-//     type Item = &'a NPCCell;
-
-//     fn next(&mut self) -> Option<Self::Item> {
-//         if self.index >= self.map.max_npc.get() {
-//             return None;
-//         }
-
-//         let item = self.map.npcs.get(self.index as usize);
-//         self.index += 1;
-
-//         item
-//     }
-// }
 
 pub struct NPCListAliveIterator<'a> {
     index: u16,

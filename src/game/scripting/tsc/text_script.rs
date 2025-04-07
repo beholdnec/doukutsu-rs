@@ -1532,7 +1532,7 @@ impl TextScriptVM {
                 if event_num == 0 {
                     game_scene.boss_life_bar.set_boss_target(&game_scene.boss);
                 } else {
-                    game_scene.npc_list.try_for_each_alive_mut(&mut game_scene.npc_token, |mut npc| {
+                    let _ = game_scene.npc_list.try_for_each_alive_mut(&mut game_scene.npc_token, |mut npc| {
                         if event_num == npc.event_num {
                             let npc_id = npc.id;
                             npc.unborrow_then(|token| {
@@ -1664,7 +1664,7 @@ impl TextScriptVM {
                 let direction = Direction::from_int_facing(tsc_direction).unwrap_or(Direction::Left);
                 let block_size = state.tile_size.as_int() * 0x200;
 
-                game_scene.npc_list.try_for_each_alive_mut(&mut game_scene.npc_token, |mut npc| {
+                let _ = game_scene.npc_list.try_for_each_alive_mut(&mut game_scene.npc_token, |mut npc| {
                     if npc.event_num == event_num {
                         npc.x = x * block_size;
                         npc.y = y * block_size;

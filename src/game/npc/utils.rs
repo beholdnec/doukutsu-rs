@@ -257,34 +257,32 @@ impl NPCList {
 
     /// Deletes NPCs with specified type.
     pub fn kill_npcs_by_type(&self, npc_type: u16, smoke: bool, state: &mut SharedGameState, token: &mut impl TokenProvider) {
-        token.unborrow_then(|token| {
-            self.for_each_alive_mut(token, |mut npc| {
-                if npc.npc_type != npc_type {
-                    return;
+        self.for_each_alive_mut(token, |mut npc| {
+            if npc.npc_type != npc_type {
+                return;
+            }
+
+            state.set_flag(npc.flag_num as usize, true);
+            npc.cond.set_alive(false);
+
+            if smoke {
+                if let Some(table_entry) = state.npc_table.get_entry(npc.npc_type) {
+                    state.sound_manager.play_sfx(table_entry.death_sound);
                 }
 
-                state.set_flag(npc.flag_num as usize, true);
-                npc.cond.set_alive(false);
-    
-                if smoke {
-                    if let Some(table_entry) = state.npc_table.get_entry(npc.npc_type) {
-                        state.sound_manager.play_sfx(table_entry.death_sound);
+                match npc.size {
+                    1 => {
+                        self.create_death_smoke(npc.x, npc.y, npc.display_bounds.right as usize, 4, state, &npc.rng);
                     }
-    
-                    match npc.size {
-                        1 => {
-                            self.create_death_smoke(npc.x, npc.y, npc.display_bounds.right as usize, 4, state, &npc.rng);
-                        }
-                        2 => {
-                            self.create_death_smoke(npc.x, npc.y, npc.display_bounds.right as usize, 8, state, &npc.rng);
-                        }
-                        3 => {
-                            self.create_death_smoke(npc.x, npc.y, npc.display_bounds.right as usize, 16, state, &npc.rng);
-                        }
-                        _ => {}
-                    };
-                }
-            });
+                    2 => {
+                        self.create_death_smoke(npc.x, npc.y, npc.display_bounds.right as usize, 8, state, &npc.rng);
+                    }
+                    3 => {
+                        self.create_death_smoke(npc.x, npc.y, npc.display_bounds.right as usize, 16, state, &npc.rng);
+                    }
+                    _ => {}
+                };
+            }
         });
     }
 
